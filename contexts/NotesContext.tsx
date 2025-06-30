@@ -9,6 +9,7 @@ export interface Note {
   createdAt: Date;
   updatedAt: Date;
   thumbnail?: string;
+  favorite?: boolean;
   paths?: Array<{
     id: string;
     d: string;

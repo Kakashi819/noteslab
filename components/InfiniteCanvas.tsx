@@ -21,12 +21,25 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
   const { theme } = useTheme();
   const [currentPath, setCurrentPath] = useState<string>('');
   const [isDrawing, setIsDrawing] = useState(false);
+  const [scale, setScale] = useState(1);
+  const [translateX, setTranslateX] = useState(0);
+  const [translateY, setTranslateY] = useState(0);
   const pathIdRef = useRef(0);
+  const lastDistance = useRef(0);
+  const lastCenter = useRef({ x: 0, y: 0 });
 
   const generatePathId = useCallback(() => {
     pathIdRef.current += 1;
     return `path_${pathIdRef.current}_${Date.now()}`;
   }, []);
+
+  // Simple coordinate transformation
+  const screenToCanvas = useCallback((screenX: number, screenY: number) => {
+    // Convert screen coordinates to canvas coordinates
+    const canvasX = (screenX - translateX) / scale;
+    const canvasY = (screenY - translateY) / scale;
+    return { x: canvasX, y: canvasY };
+  }, [translateX, translateY, scale]);
 
   const addNewPath = useCallback((pathData: string) => {
     try {
@@ -44,17 +57,44 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
     }
   }, [paths, onPathsChange, currentTool, generatePathId]);
 
+  const calculateDistance = (touches: any[]) => {
+    if (touches.length < 2) return 0;
+    const dx = touches[0].pageX - touches[1].pageX;
+    const dy = touches[0].pageY - touches[1].pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const calculateCenter = (touches: any[]) => {
+    if (touches.length < 2) return { x: 0, y: 0 };
+    return {
+      x: (touches[0].pageX + touches[1].pageX) / 2,
+      y: (touches[0].pageY + touches[1].pageY) / 2,
+    };
+  };
+
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (evt, gestureState) => {
+      return gestureState.numberActiveTouches === 1 || gestureState.numberActiveTouches === 2;
+    },
     onPanResponderGrant: (evt) => {
       try {
         const { locationX, locationY } = evt.nativeEvent;
-        setIsDrawing(true);
+        const touches = evt.nativeEvent.touches;
         
-        if (currentTool.mode === 'draw') {
-          const pathData = `M${locationX.toFixed(2)},${locationY.toFixed(2)}`;
-          setCurrentPath(pathData);
+        if (touches.length === 1) {
+          // Single touch - drawing mode
+          setIsDrawing(true);
+          
+          if (currentTool.mode === 'draw') {
+            const coords = screenToCanvas(locationX, locationY);
+            const pathData = `M${coords.x.toFixed(1)},${coords.y.toFixed(1)}`;
+            setCurrentPath(pathData);
+          }
+        } else if (touches.length === 2) {
+          // Two touches - zoom/pan mode
+          lastDistance.current = calculateDistance(touches);
+          lastCenter.current = calculateCenter(touches);
         }
       } catch (error) {
         console.log('Pan responder grant error:', error);
@@ -62,32 +102,72 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
     },
     onPanResponderMove: (evt) => {
       try {
-        const { locationX, locationY } = evt.nativeEvent;
+        const touches = evt.nativeEvent.touches;
         
-        if (currentTool.mode === 'draw' && isDrawing) {
-          setCurrentPath((prev) => {
-            if (prev && typeof prev === 'string') {
-              return `${prev} L${locationX.toFixed(2)},${locationY.toFixed(2)}`;
-            }
-            return `M${locationX.toFixed(2)},${locationY.toFixed(2)}`;
-          });
+        if (touches.length === 1 && isDrawing) {
+          // Single touch - continue drawing
+          const { locationX, locationY } = evt.nativeEvent;
+          
+          if (currentTool.mode === 'draw') {
+            const coords = screenToCanvas(locationX, locationY);
+            
+            setCurrentPath((prev) => {
+              if (prev && typeof prev === 'string') {
+                return `${prev} L${coords.x.toFixed(1)},${coords.y.toFixed(1)}`;
+              }
+              return `M${coords.x.toFixed(1)},${coords.y.toFixed(1)}`;
+            });
+          }
+        } else if (touches.length === 2) {
+          // Two touches - handle zoom and pan
+          const currentDistance = calculateDistance(touches);
+          const currentCenter = calculateCenter(touches);
+          
+          if (lastDistance.current > 0) {
+            // Handle zoom
+            const scaleFactor = currentDistance / lastDistance.current;
+            const newScale = Math.min(Math.max(scale * scaleFactor, 0.5), 5);
+            setScale(newScale);
+            
+            // Handle pan based on center movement
+            const centerDeltaX = currentCenter.x - lastCenter.current.x;
+            const centerDeltaY = currentCenter.y - lastCenter.current.y;
+            
+            setTranslateX(prev => prev + centerDeltaX);
+            setTranslateY(prev => prev + centerDeltaY);
+          }
+          
+          lastDistance.current = currentDistance;
+          lastCenter.current = currentCenter;
         }
       } catch (error) {
         console.log('Pan responder move error:', error);
       }
     },
-    onPanResponderRelease: () => {
+    onPanResponderRelease: (evt) => {
       try {
-        setIsDrawing(false);
-        if (currentTool.mode === 'draw' && currentPath) {
-          addNewPath(currentPath);
+        const touches = evt.nativeEvent.touches;
+        
+        if (touches.length === 0) {
+          // All touches released
+          setIsDrawing(false);
+          if (currentTool.mode === 'draw' && currentPath) {
+            addNewPath(currentPath);
+          }
+          setCurrentPath('');
+          lastDistance.current = 0;
         }
-        setCurrentPath('');
       } catch (error) {
         console.log('Pan responder release error:', error);
       }
     },
   });
+
+  const resetZoom = () => {
+    setScale(1);
+    setTranslateX(0);
+    setTranslateY(0);
+  };
 
   const renderTemplate = () => {
     const patternSize = 20;
@@ -168,11 +248,39 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
       width: screenWidth,
       height: screenHeight,
     },
+    zoomControls: {
+      position: 'absolute',
+      right: 20,
+      bottom: 100,
+      flexDirection: 'row',
+      gap: 10,
+    },
+    zoomButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: theme.surface,
+      justifyContent: 'center',
+      alignItems: 'center',
+      elevation: 4,
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    },
+    zoomText: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: theme.onSurface,
+    },
   });
 
-  // Safety check for SVG dimensions
-  const svgWidth = Math.max(1, screenWidth);
-  const svgHeight = Math.max(1, screenHeight);
+  // Calculate viewBox based on current transform
+  const viewBoxX = -translateX / scale;
+  const viewBoxY = -translateY / scale;
+  const viewBoxWidth = screenWidth / scale;
+  const viewBoxHeight = screenHeight / scale;
+  const viewBox = `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`;
 
   return (
     <View style={styles.container}>
@@ -180,7 +288,13 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
         {(() => {
           try {
             return (
-              <Svg width={svgWidth.toString()} height={svgHeight.toString()} style={styles.svgContainer}>
+              <Svg 
+                width={screenWidth.toString()} 
+                height={screenHeight.toString()} 
+                style={styles.svgContainer}
+                viewBox={viewBox}
+                preserveAspectRatio="none"
+              >
                 {renderTemplate()}
                 
                 {/* Background with pattern */}
@@ -233,6 +347,19 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
             );
           }
         })()}
+      </View>
+
+      {/* Zoom Controls */}
+      <View style={styles.zoomControls}>
+        <View style={styles.zoomButton} onTouchEnd={() => setScale(prev => Math.min(prev * 1.2, 5))}>
+          <Text style={styles.zoomText}>+</Text>
+        </View>
+        <View style={styles.zoomButton} onTouchEnd={() => setScale(prev => Math.max(prev / 1.2, 0.5))}>
+          <Text style={styles.zoomText}>-</Text>
+        </View>
+        <View style={styles.zoomButton} onTouchEnd={resetZoom}>
+          <Text style={styles.zoomText}>⌂</Text>
+        </View>
       </View>
     </View>
   );

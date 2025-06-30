@@ -1,41 +1,86 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { MoveVertical as MoreVertical, Trash2, Clock } from 'lucide-react-native';
+import React, { memo, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useRouter } from 'expo-router';
+import { FileText, Calendar, Clock, MoreVertical, Star, Trash2, Share2, Edit3 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Note } from '@/contexts/NotesContext';
 
 interface NoteCardProps {
   note: Note;
-  onPress: () => void;
-  onDelete: () => void;
+  onDelete?: (id: string) => void;
+  onFavorite?: (id: string) => void;
+  onShare?: (note: Note) => void;
+  isSelected?: boolean;
+  onSelect?: (id: string) => void;
+  selectionMode?: boolean;
 }
 
-export function NoteCard({ note, onPress, onDelete }: NoteCardProps) {
+const NoteCard = memo(({ 
+  note, 
+  onDelete, 
+  onFavorite, 
+  onShare, 
+  isSelected = false, 
+  onSelect, 
+  selectionMode = false 
+}: NoteCardProps) => {
   const { theme } = useTheme();
+  const router = useRouter();
 
-  const formatDate = (date: Date) => {
+  const handlePress = useCallback(() => {
+    if (selectionMode && onSelect) {
+      onSelect(note.id);
+    } else {
+      router.push(`/note/${note.id}`);
+    }
+  }, [note.id, selectionMode, onSelect, router]);
+
+  const handleLongPress = useCallback(() => {
+    if (onSelect) {
+      onSelect(note.id);
+    }
+  }, [note.id, onSelect]);
+
+  const formatDate = useCallback((date: Date) => {
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 1) return 'Today';
+    if (diffDays === 2) return 'Yesterday';
+    if (diffDays <= 7) return `${diffDays - 1} days ago`;
+    
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  }, []);
 
-    if (diffDays === 1) {
-      return 'Today';
-    } else if (diffDays === 2) {
-      return 'Yesterday';
-    } else if (diffDays <= 7) {
-      return `${diffDays - 1} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
-  };
+  const formatTime = useCallback((date: Date) => {
+    return date.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  }, []);
 
-  const getTemplateColor = (template: string) => {
-    switch (template) {
-      case 'dotted': return theme.primary;
-      case 'lined': return theme.secondary;
-      case 'grid': return theme.success;
-      default: return theme.onSurfaceVariant;
+  const getTemplateIcon = useCallback(() => {
+    switch (note.template) {
+      case 'dotted':
+        return '🔵';
+      case 'lined':
+        return '📏';
+      case 'grid':
+        return '🔲';
+      default:
+        return '📄';
     }
-  };
+  }, [note.template]);
+
+  const getPathCount = useCallback(() => {
+    return note.paths?.length || 0;
+  }, [note.paths]);
 
   const styles = StyleSheet.create({
     container: {
@@ -43,119 +88,204 @@ export function NoteCard({ note, onPress, onDelete }: NoteCardProps) {
       borderRadius: 16,
       padding: 16,
       marginBottom: 12,
-      borderWidth: 1,
-      borderColor: theme.outlineVariant,
       elevation: 2,
       shadowColor: theme.shadow,
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.1,
       shadowRadius: 4,
+      borderWidth: isSelected ? 2 : 0,
+      borderColor: theme.primary,
     },
     header: {
       flexDirection: 'row',
+      alignItems: 'center',
       justifyContent: 'space-between',
-      alignItems: 'flex-start',
       marginBottom: 8,
     },
+    titleContainer: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    templateIcon: {
+      fontSize: 16,
+    },
     title: {
-      fontSize: 18,
+      fontSize: 16,
       fontFamily: 'Inter-SemiBold',
       color: theme.onSurface,
       flex: 1,
-      marginRight: 8,
     },
-    menuButton: {
-      padding: 4,
+    actions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    actionButton: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: theme.surfaceVariant,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
     content: {
       marginBottom: 12,
     },
-    contentPreview: {
+    contentText: {
       fontSize: 14,
       fontFamily: 'Inter-Regular',
       color: theme.onSurfaceVariant,
       lineHeight: 20,
     },
-    footer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
+    thumbnail: {
+      width: '100%',
+      height: 120,
+      borderRadius: 8,
+      backgroundColor: theme.surfaceVariant,
+      marginBottom: 12,
+      justifyContent: 'center',
       alignItems: 'center',
     },
-    templateBadge: {
+    thumbnailText: {
+      fontSize: 12,
+      color: theme.onSurfaceVariant,
+      textAlign: 'center',
+    },
+    footer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    metadata: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+    },
+    metadataItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+    },
+    metadataText: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: theme.onSurfaceVariant,
+    },
+    stats: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    statItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
       paddingHorizontal: 8,
       paddingVertical: 4,
       borderRadius: 12,
       backgroundColor: theme.surfaceVariant,
     },
-    templateText: {
-      fontSize: 12,
+    statText: {
+      fontSize: 11,
       fontFamily: 'Inter-Medium',
-      textTransform: 'capitalize',
-    },
-    dateContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-    },
-    dateText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Regular',
       color: theme.onSurfaceVariant,
-    },
-    deleteButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      backgroundColor: theme.error,
-      borderRadius: 12,
-      gap: 4,
-    },
-    deleteText: {
-      fontSize: 12,
-      fontFamily: 'Inter-Medium',
-      color: theme.onError,
     },
   });
 
   return (
-    <TouchableOpacity style={styles.container} onPress={onPress}>
+    <TouchableOpacity
+      style={styles.container}
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      activeOpacity={0.7}
+    >
       <View style={styles.header}>
-        <Text style={styles.title} numberOfLines={2}>
-          {note.title || 'Untitled Note'}
-        </Text>
-        <TouchableOpacity style={styles.menuButton} onPress={onDelete}>
-          <Trash2 size={18} color={theme.error} />
-        </TouchableOpacity>
+        <View style={styles.titleContainer}>
+          <Text style={styles.templateIcon}>{getTemplateIcon()}</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            {note.title || 'Untitled Note'}
+          </Text>
+        </View>
+        
+        <View style={styles.actions}>
+          {onFavorite && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => onFavorite(note.id)}
+            >
+              <Star 
+                size={16} 
+                color={note.favorite ? theme.primary : theme.onSurfaceVariant} 
+                fill={note.favorite ? theme.primary : 'none'}
+              />
+            </TouchableOpacity>
+          )}
+          
+          {onShare && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => onShare(note)}
+            >
+              <Share2 size={16} color={theme.onSurfaceVariant} />
+            </TouchableOpacity>
+          )}
+          
+          <TouchableOpacity style={styles.actionButton}>
+            <MoreVertical size={16} color={theme.onSurfaceVariant} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {note.content && (
-        <View style={styles.content}>
-          <Text style={styles.contentPreview} numberOfLines={3}>
+      <View style={styles.content}>
+        {note.content ? (
+          <Text style={styles.contentText} numberOfLines={3}>
             {note.content}
           </Text>
-        </View>
-      )}
+        ) : note.paths && note.paths.length > 0 ? (
+          <View style={styles.thumbnail}>
+            <Text style={styles.thumbnailText}>
+              Drawing with {getPathCount()} strokes
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.contentText} numberOfLines={2}>
+            Empty note
+          </Text>
+        )}
+      </View>
 
       <View style={styles.footer}>
-        <View style={styles.templateBadge}>
-          <Text 
-            style={[
-              styles.templateText, 
-              { color: getTemplateColor(note.template) }
-            ]}
-          >
-            {note.template}
-          </Text>
+        <View style={styles.metadata}>
+          <View style={styles.metadataItem}>
+            <Calendar size={12} color={theme.onSurfaceVariant} />
+            <Text style={styles.metadataText}>
+              {formatDate(note.updatedAt)}
+            </Text>
+          </View>
+          
+          <View style={styles.metadataItem}>
+            <Clock size={12} color={theme.onSurfaceVariant} />
+            <Text style={styles.metadataText}>
+              {formatTime(note.updatedAt)}
+            </Text>
+          </View>
         </View>
 
-        <View style={styles.dateContainer}>
-          <Clock size={12} color={theme.onSurfaceVariant} />
-          <Text style={styles.dateText}>
-            {formatDate(note.updatedAt)}
-          </Text>
+        <View style={styles.stats}>
+          {note.paths && note.paths.length > 0 && (
+            <View style={styles.statItem}>
+              <FileText size={10} color={theme.onSurfaceVariant} />
+              <Text style={styles.statText}>{getPathCount()}</Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
   );
-}
+});
+
+NoteCard.displayName = 'NoteCard';
+
+export default NoteCard;

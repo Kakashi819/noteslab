@@ -1,12 +1,11 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, Plus, MoveVertical as MoreVertical, Trash2 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotes, Note } from '@/contexts/NotesContext';
-import { NoteCard } from '@/components/NoteCard';
-import { SearchBar } from '@/components/SearchBar';
+import NoteCard from '@/components/NoteCard';
 
 export default function NotesScreen() {
   const { theme } = useTheme();
@@ -74,6 +73,22 @@ export default function NotesScreen() {
       color: theme.onSurface,
       marginBottom: 16,
     },
+    searchContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.surfaceVariant,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 8,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 16,
+      fontFamily: 'Inter-Regular',
+      color: theme.onSurface,
+      paddingVertical: 4,
+    },
     content: {
       flex: 1,
       paddingHorizontal: 20,
@@ -137,11 +152,16 @@ export default function NotesScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Notes</Text>
-        <SearchBar
-          value={searchQuery}
-          onChangeText={handleSearch}
-          placeholder="Search notes..."
-        />
+        <View style={styles.searchContainer}>
+          <Search size={20} color={theme.onSurfaceVariant} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search notes..."
+            placeholderTextColor={theme.onSurfaceVariant}
+            value={searchQuery}
+            onChangeText={handleSearch}
+          />
+        </View>
       </View>
 
       <View style={styles.content}>
@@ -169,7 +189,6 @@ export default function NotesScreen() {
               <NoteCard
                 key={note.id}
                 note={note}
-                onPress={() => handleNotePress(note)}
                 onDelete={() => handleDeleteNote(note)}
               />
             ))}

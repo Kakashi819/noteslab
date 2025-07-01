@@ -243,12 +243,6 @@ const NoteCard = memo(({
           <Text style={styles.contentText} numberOfLines={3}>
             {note.content}
           </Text>
-        ) : note.paths && note.paths.length > 0 ? (
-          <View style={styles.thumbnail}>
-            <Text style={styles.thumbnailText}>
-              Drawing with {getPathCount()} strokes
-            </Text>
-          </View>
         ) : (
           <Text style={styles.contentText} numberOfLines={2}>
             Empty note
@@ -274,12 +268,6 @@ const NoteCard = memo(({
         </View>
 
         <View style={styles.stats}>
-          {note.paths && note.paths.length > 0 && (
-            <View style={styles.statItem}>
-              <FileText size={10} color={theme.onSurfaceVariant} />
-              <Text style={styles.statText}>{getPathCount()}</Text>
-            </View>
-          )}
         </View>
       </View>
     </TouchableOpacity>

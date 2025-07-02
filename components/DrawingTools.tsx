@@ -5,7 +5,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 export interface DrawingTool {
   color: string;
   strokeWidth: number;
-  mode: 'draw' | 'erase';
+  mode: 'draw' | 'erase' | 'pan';
 }
 
 interface DrawingToolsProps {
@@ -61,8 +61,10 @@ export function DrawingTools({
   }, [currentTool, onToolChange]);
 
   const handleModeToggle = useCallback(() => {
-    const newMode = currentTool.mode === 'draw' ? 'erase' : 'draw';
-    onToolChange({ ...currentTool, mode: newMode });
+    const modes: ('draw' | 'erase' | 'pan')[] = ['draw', 'erase', 'pan'];
+    const currentIndex = modes.indexOf(currentTool.mode);
+    const nextIndex = (currentIndex + 1) % modes.length;
+    onToolChange({ ...currentTool, mode: modes[nextIndex] });
   }, [currentTool, onToolChange]);
 
   const styles = StyleSheet.create({
@@ -159,7 +161,7 @@ export function DrawingTools({
       width: 44,
       height: 44,
       borderRadius: 22,
-      backgroundColor: currentTool.mode === 'erase' ? theme.error : theme.primary,
+      backgroundColor: currentTool.mode === 'erase' ? theme.error : currentTool.mode === 'pan' ? theme.secondary : theme.primary,
       justifyContent: 'center',
       alignItems: 'center',
       marginBottom: 8,
@@ -266,10 +268,10 @@ export function DrawingTools({
         </View>
       )}
 
-      {/* Mode Toggle (Draw/Erase) */}
+      {/* Mode Toggle (Draw/Erase/Pan) */}
       <TouchableOpacity style={styles.modeToggle} onPress={handleModeToggle}>
         <Text style={styles.modeToggleText}>
-          {currentTool.mode === 'draw' ? '✏️' : '🧽'}
+          {currentTool.mode === 'draw' ? '✏️' : currentTool.mode === 'erase' ? '🧽' : '✋'}
         </Text>
       </TouchableOpacity>
 

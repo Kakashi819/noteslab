@@ -1,7 +1,7 @@
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { FileText, Grid3x3 as Grid3X3, Minus, Circle } from 'lucide-react-native';
+import { File, Grid, AlignLeft, Grid3x3 } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotes } from '@/contexts/NotesContext';
 
@@ -19,25 +19,25 @@ const templates: TemplateOption[] = [
     id: 'blank',
     name: 'Blank',
     description: 'Clean canvas for free-form notes',
-    icon: FileText,
+    icon: File,
   },
   {
     id: 'dotted',
     name: 'Dotted',
     description: 'Dotted grid for structured writing',
-    icon: Circle,
+    icon: Grid,
   },
   {
     id: 'lined',
     name: 'Lined',
     description: 'Horizontal lines for neat writing',
-    icon: Minus,
+    icon: AlignLeft,
   },
   {
     id: 'grid',
     name: 'Grid',
     description: 'Square grid for precise layout',
-    icon: Grid3X3,
+    icon: Grid3x3,
   },
 ];
 

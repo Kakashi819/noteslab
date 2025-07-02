@@ -1,11 +1,13 @@
+import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
 import { useState, useCallback } from 'react';
 import { useFocusEffect, router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Search, Plus, MoveVertical as MoreVertical, Trash2 } from 'lucide-react-native';
+import { Search, PlusSquare, Star, Clock, LayoutGrid, Plus } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotes, Note } from '@/contexts/NotesContext';
 import NoteCard from '@/components/NoteCard';
+import { ScrollableSection, HorizontalCard } from '@/components/ScrollableSections';
 
 export default function NotesScreen() {
   const { theme } = useTheme();
@@ -57,6 +59,30 @@ export default function NotesScreen() {
   const handleCreateNote = () => {
     router.push('/(tabs)/create');
   };
+
+  const handleViewAllNotes = () => {
+    // Navigate to a full notes view
+    console.log('View all notes');
+  };
+
+  const handleViewFavorites = () => {
+    // Filter to show only favorites
+    console.log('View favorites');
+  };
+
+  const handleViewTemplates = () => {
+    router.push('/(tabs)/create');
+  };
+
+  const quickActions = [
+    { title: 'Create Note', icon: PlusSquare, color: theme.primary, onPress: handleCreateNote },
+    { title: 'Favorites', icon: Star, color: '#FFD700', onPress: handleViewFavorites },
+    { title: 'Recent', icon: Clock, color: '#4CAF50', onPress: handleViewAllNotes },
+    { title: 'Templates', icon: LayoutGrid, color: '#2196F3', onPress: handleViewTemplates },
+  ];
+
+  const recentNotes = filteredNotes.slice(0, 5);
+  const favoriteNotes = filteredNotes.filter(note => note.favorite).slice(0, 5);
 
   const styles = StyleSheet.create({
     container: {
@@ -164,7 +190,7 @@ export default function NotesScreen() {
         </View>
       </View>
 
-      <View style={styles.content}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {filteredNotes.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>
@@ -184,17 +210,95 @@ export default function NotesScreen() {
             )}
           </View>
         ) : (
-          <ScrollView style={styles.notesGrid} showsVerticalScrollIndicator={false}>
-            {filteredNotes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                onDelete={() => handleDeleteNote(note)}
-              />
-            ))}
-          </ScrollView>
+          <>
+            {/* Quick Actions - Horizontal */}
+            <ScrollableSection 
+              title="Quick Actions" 
+              horizontal 
+              showMoreButton 
+              moreButtonText="View All"
+              onPress={handleViewAllNotes}
+            >
+              {quickActions.map((action, index) => {
+                const IconComponent = action.icon;
+                return (
+                  <HorizontalCard key={index} onPress={action.onPress}>
+                    <IconComponent 
+                      size={24} 
+                      color={action.color} 
+                      style={{ marginBottom: 8, alignSelf: 'center' }}
+                    />
+                    <Text style={{ 
+                      fontSize: 14, 
+                      fontFamily: 'Inter-Medium', 
+                      color: theme.onSurface,
+                      textAlign: 'center'
+                    }}>
+                      {action.title}
+                    </Text>
+                  </HorizontalCard>
+                );
+              })}
+            </ScrollableSection>
+
+            {/* Recent Notes - Horizontal */}
+            {recentNotes.length > 0 && (
+              <ScrollableSection 
+                title="Recent Notes" 
+                horizontal 
+                showMoreButton 
+                moreButtonText="See All"
+                onPress={handleViewAllNotes}
+              >
+                {recentNotes.map((note) => (
+                  <HorizontalCard key={note.id} onPress={() => handleNotePress(note)}>
+                    <Text style={{ 
+                      fontSize: 16, 
+                      fontFamily: 'Inter-SemiBold', 
+                      color: theme.onSurface,
+                      marginBottom: 8
+                    }} numberOfLines={1}>
+                      {note.title || 'Untitled Note'}
+                    </Text>
+                    <Text style={{ 
+                      fontSize: 14, 
+                      fontFamily: 'Inter-Regular', 
+                      color: theme.onSurfaceVariant,
+                      marginBottom: 4
+                    }} numberOfLines={2}>
+                      {note.content || 'No content'}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Clock size={12} color={theme.onSurfaceVariant} />
+                      <Text style={{ 
+                        fontSize: 12, 
+                        fontFamily: 'Inter-Medium', 
+                        color: theme.onSurfaceVariant 
+                      }}>
+                        {new Intl.DateTimeFormat('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        }).format(note.updatedAt)}
+                      </Text>
+                    </View>
+                  </HorizontalCard>
+                ))}
+              </ScrollableSection>
+            )}
+
+            {/* All Notes - Vertical */}
+            <ScrollableSection title="All Notes">
+              {filteredNotes.map((note) => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  onDelete={() => handleDeleteNote(note)}
+                />
+              ))}
+            </ScrollableSection>
+          </>
         )}
-      </View>
+      </ScrollView>
 
       <TouchableOpacity style={styles.fab} onPress={handleCreateNote}>
         <Plus size={24} color={theme.onPrimary} />

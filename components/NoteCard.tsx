@@ -1,9 +1,10 @@
-import React, { memo, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { memo, useCallback, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { FileText, Calendar, Clock, MoreVertical, Star, Trash2, Share2, Edit3 } from 'lucide-react-native';
+import { FileText, Calendar, Clock, MoreVertical, Star, Trash2, Share2, Edit3, Folder } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Note } from '@/contexts/NotesContext';
+import { Note, useNotes } from '@/contexts/NotesContext';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 
 interface NoteCardProps {
   note: Note;
@@ -26,6 +27,9 @@ const NoteCard = memo(({
 }: NoteCardProps) => {
   const { theme } = useTheme();
   const router = useRouter();
+  const { folders, updateNote } = useNotes();
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [folderModalVisible, setFolderModalVisible] = useState(false);
 
   const handlePress = useCallback(() => {
     if (selectionMode && onSelect) {
@@ -40,6 +44,11 @@ const NoteCard = memo(({
       onSelect(note.id);
     }
   }, [note.id, onSelect]);
+
+  const handleMoveToFolder = (folderId: string) => {
+    updateNote(note.id, { folderId });
+    setFolderModalVisible(false);
+  };
 
   const formatDate = useCallback((date: Date) => {
     const now = new Date();
@@ -81,6 +90,27 @@ const NoteCard = memo(({
   const getPathCount = useCallback(() => {
     return note.paths?.length || 0;
   }, [note.paths]);
+
+  const folder = note.folderId ? folders.find(f => f.id === note.folderId) : null;
+
+  const renderRightActions = (progress: any, dragX: any) => {
+    const trans = dragX.interpolate({
+      inputRange: [-100, 0],
+      outputRange: [0, 100],
+      extrapolate: 'clamp',
+    });
+    return (
+      <TouchableOpacity
+        style={styles.rightAction}
+        onPress={() => onDelete?.(note.id)}
+      >
+        <Animated.View style={[styles.actionContent, { transform: [{ translateX: trans }] }]}>
+          <Trash2 size={24} color={theme.onError} />
+          <Text style={styles.actionText}>Delete</Text>
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
 
   const styles = StyleSheet.create({
     container: {
@@ -192,85 +222,201 @@ const NoteCard = memo(({
       fontFamily: 'Inter-Medium',
       color: theme.onSurfaceVariant,
     },
+    modalContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    },
+    menu: {
+      backgroundColor: theme.surface,
+      borderRadius: 12,
+      padding: 12,
+      elevation: 5,
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
+    },
+    menuItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    menuItemText: {
+      fontSize: 16,
+      fontFamily: 'Inter-Medium',
+      color: theme.onSurface,
+      marginLeft: 12,
+    },
+    folderName: {
+      fontSize: 12,
+      fontFamily: 'Inter-Medium',
+      color: theme.primary,
+    },
+    rightAction: {
+      backgroundColor: theme.error,
+      justifyContent: 'center',
+      alignItems: 'flex-end',
+      borderRadius: 16,
+      marginBottom: 12,
+    },
+    actionContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 20,
+    },
+    actionText: {
+      color: theme.onError,
+      fontWeight: '600',
+      marginLeft: 8,
+    },
   });
 
   return (
-    <TouchableOpacity
-      style={styles.container}
-      onPress={handlePress}
-      onLongPress={handleLongPress}
-      activeOpacity={0.7}
-    >
-      <View style={styles.header}>
-        <View style={styles.titleContainer}>
-          <Text style={styles.templateIcon}>{getTemplateIcon()}</Text>
-          <Text style={styles.title} numberOfLines={1}>
-            {note.title || 'Untitled Note'}
-          </Text>
-        </View>
-        
-        <View style={styles.actions}>
-          {onFavorite && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => onFavorite(note.id)}
-            >
-              <Star 
-                size={16} 
-                color={note.favorite ? theme.primary : theme.onSurfaceVariant} 
-                fill={note.favorite ? theme.primary : 'none'}
-              />
-            </TouchableOpacity>
-          )}
-          
-          {onShare && (
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => onShare(note)}
-            >
-              <Share2 size={16} color={theme.onSurfaceVariant} />
-            </TouchableOpacity>
-          )}
-          
-          <TouchableOpacity style={styles.actionButton}>
-            <MoreVertical size={16} color={theme.onSurfaceVariant} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.content}>
-        {note.content ? (
-          <Text style={styles.contentText} numberOfLines={3}>
-            {note.content}
-          </Text>
-        ) : (
-          <Text style={styles.contentText} numberOfLines={2}>
-            Empty note
-          </Text>
-        )}
-      </View>
-
-      <View style={styles.footer}>
-        <View style={styles.metadata}>
-          <View style={styles.metadataItem}>
-            <Calendar size={12} color={theme.onSurfaceVariant} />
-            <Text style={styles.metadataText}>
-              {formatDate(note.updatedAt)}
+    <Swipeable renderRightActions={renderRightActions}>
+      <TouchableOpacity
+        style={styles.container}
+        onPress={handlePress}
+        onLongPress={handleLongPress}
+        activeOpacity={0.7}
+      >
+        <View style={styles.header}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.templateIcon}>{getTemplateIcon()}</Text>
+            <Text style={styles.title} numberOfLines={1}>
+              {note.title || 'Untitled Note'}
             </Text>
           </View>
           
-          <View style={styles.metadataItem}>
-            <Clock size={12} color={theme.onSurfaceVariant} />
-            <Text style={styles.metadataText}>
-              {formatTime(note.updatedAt)}
-            </Text>
+          <View style={styles.actions}>
+            {onFavorite && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => onFavorite(note.id)}
+              >
+                <Star 
+                  size={16} 
+                  color={note.favorite ? theme.primary : theme.onSurfaceVariant} 
+                  fill={note.favorite ? theme.primary : 'none'}
+                />
+              </TouchableOpacity>
+            )}
+            
+            {onShare && (
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => onShare(note)}
+              >
+                <Share2 size={16} color={theme.onSurfaceVariant} />
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity style={styles.actionButton} onPress={() => setMenuVisible(true)}>
+              <MoreVertical size={16} color={theme.onSurfaceVariant} />
+            </TouchableOpacity>
           </View>
         </View>
 
-        <View style={styles.stats}>
+        <View style={styles.content}>
+          {note.content ? (
+            <Text style={styles.contentText} numberOfLines={3}>
+              {note.content}
+            </Text>
+          ) : (
+            <Text style={styles.contentText} numberOfLines={2}>
+              Empty note
+            </Text>
+          )}
         </View>
-      </View>
-    </TouchableOpacity>
+
+        <View style={styles.footer}>
+          <View style={styles.metadata}>
+            <View style={styles.metadataItem}>
+              <Calendar size={12} color={theme.onSurfaceVariant} />
+              <Text style={styles.metadataText}>
+                {formatDate(note.updatedAt)}
+              </Text>
+            </View>
+            
+            <View style={styles.metadataItem}>
+              <Clock size={12} color={theme.onSurfaceVariant} />
+              <Text style={styles.metadataText}>
+                {formatTime(note.updatedAt)}
+              </Text>
+            </View>
+          </View>
+
+          {folder && (
+            <View style={styles.statItem}>
+              <Folder size={12} color={theme.primary} />
+              <Text style={styles.folderName}>{folder.name}</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+      <Modal
+        transparent
+        visible={menuVisible}
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <TouchableOpacity style={styles.modalContainer} onPress={() => setMenuVisible(false)}>
+          <View style={styles.menu}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                onFavorite?.(note.id);
+                setMenuVisible(false);
+              }}
+            >
+              <Star size={20} color={note.favorite ? theme.primary : theme.onSurfaceVariant} />
+              <Text style={styles.menuItemText}>{note.favorite ? 'Unfavorite' : 'Favorite'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuVisible(false);
+                setFolderModalVisible(true);
+              }}
+            >
+              <Folder size={20} color={theme.onSurfaceVariant} />
+              <Text style={styles.menuItemText}>Move to Folder</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                onDelete?.(note.id);
+                setMenuVisible(false);
+              }}
+            >
+              <Trash2 size={20} color={theme.error} />
+              <Text style={[styles.menuItemText, { color: theme.error }]}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      <Modal
+        transparent
+        visible={folderModalVisible}
+        onRequestClose={() => setFolderModalVisible(false)}
+      >
+        <TouchableOpacity style={styles.modalContainer} onPress={() => setFolderModalVisible(false)}>
+          <View style={styles.menu}>
+            {folders.map(f => (
+              <TouchableOpacity
+                key={f.id}
+                style={styles.menuItem}
+                onPress={() => handleMoveToFolder(f.id)}
+              >
+                <Folder size={20} color={theme.onSurfaceVariant} />
+                <Text style={styles.menuItemText}>{f.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </Swipeable>
   );
 });
 

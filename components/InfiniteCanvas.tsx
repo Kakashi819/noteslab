@@ -11,7 +11,8 @@ interface InfiniteCanvasProps {
   currentTool: {
     color: string;
     strokeWidth: number;
-    mode: 'draw' | 'erase';
+    mode: 'draw' | 'erase' | 'pan';
+    eraserSize?: number;
   };
 }
 
@@ -22,152 +23,196 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
   const [currentPath, setCurrentPath] = useState<string>('');
   const [isDrawing, setIsDrawing] = useState(false);
   const [scale, setScale] = useState(1);
-  const [translateX, setTranslateX] = useState(0);
-  const [translateY, setTranslateY] = useState(0);
+  const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const pathIdRef = useRef(0);
-  const lastDistance = useRef(0);
-  const lastCenter = useRef({ x: 0, y: 0 });
+  
+  // Gesture state refs
+  const lastTouch = useRef({ x: 0, y: 0 });
+  const isPanning = useRef(false);
+  const isZooming = useRef(false);
+  const lastScale = useRef(1);
+  const lastTranslate = useRef({ x: 0, y: 0 });
+  const initialDistance = useRef(0);
+  const zoomCenter = useRef({ x: 0, y: 0 });
 
-  const generatePathId = useCallback(() => {
-    pathIdRef.current += 1;
-    return `path_${pathIdRef.current}_${Date.now()}`;
-  }, []);
-
-  // Simple coordinate transformation
-  const screenToCanvas = useCallback((screenX: number, screenY: number) => {
-    // Convert screen coordinates to canvas coordinates
-    const canvasX = (screenX - translateX) / scale;
-    const canvasY = (screenY - translateY) / scale;
-    return { x: canvasX, y: canvasY };
-  }, [translateX, translateY, scale]);
-
-  const addNewPath = useCallback((pathData: string) => {
-    try {
-      if (pathData && pathData.length > 0 && typeof pathData === 'string') {
-        const newPath: DrawPath = {
-          id: generatePathId(),
-          d: pathData,
-          color: currentTool.color,
-          strokeWidth: currentTool.strokeWidth,
-        };
-        onPathsChange([...paths, newPath]);
-      }
-    } catch (error) {
-      console.log('Error adding path:', error);
-    }
-  }, [paths, onPathsChange, currentTool, generatePathId]);
-
-  const calculateDistance = (touches: any[]) => {
-    if (touches.length < 2) return 0;
-    const dx = touches[0].pageX - touches[1].pageX;
-    const dy = touches[0].pageY - touches[1].pageY;
-    return Math.sqrt(dx * dx + dy * dy);
+  // Utility: get visible bounds in canvas coordinates
+  const getVisibleBounds = () => {
+    const left = (-translate.x) / scale;
+    const top = (-translate.y) / scale;
+    const right = (screenWidth - translate.x) / scale;
+    const bottom = (screenHeight - translate.y) / scale;
+    return { left, top, right, bottom };
   };
 
-  const calculateCenter = (touches: any[]) => {
-    if (touches.length < 2) return { x: 0, y: 0 };
+  // Utility: screen to canvas coordinates
+  const screenToCanvas = (screenX: number, screenY: number) => {
     return {
-      x: (touches[0].pageX + touches[1].pageX) / 2,
-      y: (touches[0].pageY + touches[1].pageY) / 2,
+      x: (screenX - translate.x) / scale,
+      y: (screenY - translate.y) / scale,
     };
   };
 
+  // Utility: canvas to screen coordinates
+  const canvasToScreen = (canvasX: number, canvasY: number) => {
+    return {
+      x: canvasX * scale + translate.x,
+      y: canvasY * scale + translate.y,
+    };
+  };
+
+  // Grid rendering
+  const renderGrid = () => {
+    const { left, top, right, bottom } = getVisibleBounds();
+    const gridSpacing = template === 'dotted' ? 40 : template === 'lined' ? 40 : 40;
+    const lines: React.ReactNode[] = [];
+    const dots: React.ReactNode[] = [];
+    const color = theme.outlineVariant;
+
+    // Vertical lines
+    if (template === 'grid' || template === 'lined') {
+      const startX = Math.floor(left / gridSpacing) * gridSpacing;
+      for (let x = startX; x < right; x += gridSpacing) {
+        lines.push(
+          <Line
+            key={`v-${x}`}
+            x1={x}
+            y1={top}
+            x2={x}
+            y2={bottom}
+            stroke={color}
+            strokeWidth={0.5 / scale}
+          />
+        );
+      }
+    }
+    // Horizontal lines
+    if (template === 'grid' || template === 'lined') {
+      const startY = Math.floor(top / gridSpacing) * gridSpacing;
+      for (let y = startY; y < bottom; y += gridSpacing) {
+        lines.push(
+          <Line
+            key={`h-${y}`}
+            x1={left}
+            y1={y}
+            x2={right}
+            y2={y}
+            stroke={color}
+            strokeWidth={0.5 / scale}
+          />
+        );
+      }
+    }
+    // Dots
+    if (template === 'dotted') {
+      const startX = Math.floor(left / gridSpacing) * gridSpacing;
+      const startY = Math.floor(top / gridSpacing) * gridSpacing;
+      for (let x = startX; x < right; x += gridSpacing) {
+        for (let y = startY; y < bottom; y += gridSpacing) {
+          dots.push(
+            <Circle
+              key={`d-${x}-${y}`}
+              cx={x}
+              cy={y}
+              r={1.5 / scale}
+              fill={color}
+            />
+          );
+        }
+      }
+    }
+    return <>{lines}{dots}</>;
+  };
+
+  // PanResponder for gestures
   const panResponder = PanResponder.create({
     onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (evt, gestureState) => {
-      return gestureState.numberActiveTouches === 1 || gestureState.numberActiveTouches === 2;
-    },
+    onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: (evt) => {
-      try {
-        const { locationX, locationY } = evt.nativeEvent;
-        const touches = evt.nativeEvent.touches;
-        
-        if (touches.length === 1) {
-          // Single touch - drawing mode
+      const touches = evt.nativeEvent.touches;
+      if (touches.length === 1) {
+        lastTouch.current = { x: touches[0].pageX, y: touches[0].pageY };
+        if (currentTool.mode === 'draw') {
           setIsDrawing(true);
-          
-          if (currentTool.mode === 'draw') {
-            const coords = screenToCanvas(locationX, locationY);
-            const pathData = `M${coords.x.toFixed(1)},${coords.y.toFixed(1)}`;
-            setCurrentPath(pathData);
-          }
-        } else if (touches.length === 2) {
-          // Two touches - zoom/pan mode
-          lastDistance.current = calculateDistance(touches);
-          lastCenter.current = calculateCenter(touches);
+          const coords = screenToCanvas(touches[0].pageX, touches[0].pageY);
+          setCurrentPath(`M${coords.x.toFixed(1)},${coords.y.toFixed(1)}`);
+        } else if (currentTool.mode === 'pan') {
+          isPanning.current = true;
+          lastTranslate.current = { ...translate };
+        } else if (currentTool.mode === 'erase') {
+          // Eraser preview handled in render
         }
-      } catch (error) {
-        console.log('Pan responder grant error:', error);
+      } else if (touches.length === 2) {
+        isZooming.current = true;
+        const [a, b] = touches;
+        initialDistance.current = Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+        lastScale.current = scale;
+        zoomCenter.current = {
+          x: (a.pageX + b.pageX) / 2,
+          y: (a.pageY + b.pageY) / 2,
+        };
+        lastTranslate.current = { ...translate };
       }
     },
-    onPanResponderMove: (evt) => {
-      try {
-        const touches = evt.nativeEvent.touches;
-        
-        if (touches.length === 1 && isDrawing) {
-          // Single touch - continue drawing
-          const { locationX, locationY } = evt.nativeEvent;
-          
-          if (currentTool.mode === 'draw') {
-            const coords = screenToCanvas(locationX, locationY);
-            
-            setCurrentPath((prev) => {
-              if (prev && typeof prev === 'string') {
-                return `${prev} L${coords.x.toFixed(1)},${coords.y.toFixed(1)}`;
-              }
-              return `M${coords.x.toFixed(1)},${coords.y.toFixed(1)}`;
-            });
-          }
-        } else if (touches.length === 2) {
-          // Two touches - handle zoom and pan
-          const currentDistance = calculateDistance(touches);
-          const currentCenter = calculateCenter(touches);
-          
-          if (lastDistance.current > 0) {
-            // Handle zoom
-            const scaleFactor = currentDistance / lastDistance.current;
-            const newScale = Math.min(Math.max(scale * scaleFactor, 0.5), 5);
-            setScale(newScale);
-            
-            // Handle pan based on center movement
-            const centerDeltaX = currentCenter.x - lastCenter.current.x;
-            const centerDeltaY = currentCenter.y - lastCenter.current.y;
-            
-            setTranslateX(prev => prev + centerDeltaX);
-            setTranslateY(prev => prev + centerDeltaY);
-          }
-          
-          lastDistance.current = currentDistance;
-          lastCenter.current = currentCenter;
+    onPanResponderMove: (evt, gestureState) => {
+      const touches = evt.nativeEvent.touches;
+      if (touches.length === 1) {
+        if (isDrawing && currentTool.mode === 'draw') {
+          const coords = screenToCanvas(touches[0].pageX, touches[0].pageY);
+          setCurrentPath((prev) => prev ? `${prev} L${coords.x.toFixed(1)},${coords.y.toFixed(1)}` : `M${coords.x.toFixed(1)},${coords.y.toFixed(1)}`);
+        } else if (isPanning.current || currentTool.mode === 'pan') {
+          const dx = touches[0].pageX - lastTouch.current.x;
+          const dy = touches[0].pageY - lastTouch.current.y;
+          setTranslate({
+            x: lastTranslate.current.x + dx,
+            y: lastTranslate.current.y + dy,
+          });
+        } else if (currentTool.mode === 'erase') {
+          // Eraser logic (to be implemented in next step)
         }
-      } catch (error) {
-        console.log('Pan responder move error:', error);
+      } else if (touches.length === 2 && isZooming.current) {
+        const [a, b] = touches;
+        const newDistance = Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+        let newScale = lastScale.current * (newDistance / initialDistance.current);
+        // Clamp and slow down zoom
+        newScale = Math.max(0.2, Math.min(10, newScale));
+        // Make zoom slower
+        newScale = lastScale.current + (newScale - lastScale.current) * 0.2;
+        // Keep zoom center fixed
+        const center = zoomCenter.current;
+        const canvasCenter = screenToCanvas(center.x, center.y);
+        setScale(newScale);
+        setTranslate({
+          x: center.x - canvasCenter.x * newScale,
+          y: center.y - canvasCenter.y * newScale,
+        });
       }
     },
     onPanResponderRelease: (evt) => {
-      try {
-        const touches = evt.nativeEvent.touches;
-        
-        if (touches.length === 0) {
-          // All touches released
-          setIsDrawing(false);
-          if (currentTool.mode === 'draw' && currentPath) {
-            addNewPath(currentPath);
-          }
-          setCurrentPath('');
-          lastDistance.current = 0;
-        }
-      } catch (error) {
-        console.log('Pan responder release error:', error);
+      if (isDrawing && currentTool.mode === 'draw' && currentPath) {
+        // Add path
+        pathIdRef.current += 1;
+        onPathsChange([
+          ...paths,
+          {
+            id: `path_${pathIdRef.current}_${Date.now()}`,
+            d: currentPath,
+            color: currentTool.color,
+            strokeWidth: currentTool.strokeWidth,
+          },
+        ]);
       }
+      setIsDrawing(false);
+      setCurrentPath('');
+      isPanning.current = false;
+      isZooming.current = false;
+    },
+    onPanResponderTerminate: () => {
+      setIsDrawing(false);
+      setCurrentPath('');
+      isPanning.current = false;
+      isZooming.current = false;
     },
   });
-
-  const resetZoom = () => {
-    setScale(1);
-    setTranslateX(0);
-    setTranslateY(0);
-  };
 
   const renderTemplate = () => {
     const patternSize = 20;
@@ -273,14 +318,21 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
       fontWeight: 'bold',
       color: theme.onSurface,
     },
+    infoText: {
+      position: 'absolute',
+      top: 20,
+      left: 20,
+      backgroundColor: theme.surface,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 16,
+      fontSize: 12,
+      color: theme.onSurfaceVariant,
+    },
   });
 
-  // Calculate viewBox based on current transform
-  const viewBoxX = -translateX / scale;
-  const viewBoxY = -translateY / scale;
-  const viewBoxWidth = screenWidth / scale;
-  const viewBoxHeight = screenHeight / scale;
-  const viewBox = `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`;
+  // Simplified viewBox calculation for better symmetry
+  const viewBox = `0 0 ${screenWidth} ${screenHeight}`;
 
   return (
     <View style={styles.container}>
@@ -295,17 +347,20 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
                 viewBox={viewBox}
                 preserveAspectRatio="none"
               >
-                {renderTemplate()}
-                
-                {/* Background with pattern */}
-                <Rect
-                  width="100%"
-                  height="100%"
-                  fill={getPatternFill()}
-                />
-                
-                {/* Existing paths */}
-                <G>
+                {/* Apply transform to the entire canvas */}
+                <G
+                  transform={`translate(${translate.x}, ${translate.y}) scale(${scale})`}
+                >
+                  {renderTemplate()}
+                  
+                  {/* Background with pattern */}
+                  <Rect
+                    width={screenWidth}
+                    height={screenHeight}
+                    fill={getPatternFill()}
+                  />
+                  
+                  {/* Existing paths */}
                   {paths.map((path) => {
                     // Validate path data before rendering
                     if (!path.d || typeof path.d !== 'string' || path.d.trim() === '') {
@@ -349,15 +404,23 @@ export function InfiniteCanvas({ template, paths, onPathsChange, currentTool }: 
         })()}
       </View>
 
+      {/* Info text */}
+      <Text style={styles.infoText}>
+        Scale: {scale.toFixed(2)}x | Mode: {currentTool.mode} | Zoom: {isZooming.current ? 'Yes' : 'No'}
+      </Text>
+
       {/* Zoom Controls */}
       <View style={styles.zoomControls}>
-        <View style={styles.zoomButton} onTouchEnd={() => setScale(prev => Math.min(prev * 1.2, 5))}>
+        <View style={styles.zoomButton} onTouchEnd={() => setScale(Math.min(scale * 1.2, 10))}>
           <Text style={styles.zoomText}>+</Text>
         </View>
-        <View style={styles.zoomButton} onTouchEnd={() => setScale(prev => Math.max(prev / 1.2, 0.5))}>
+        <View style={styles.zoomButton} onTouchEnd={() => setScale(Math.max(scale / 1.2, 0.1))}>
           <Text style={styles.zoomText}>-</Text>
         </View>
-        <View style={styles.zoomButton} onTouchEnd={resetZoom}>
+        <View style={styles.zoomButton} onTouchEnd={() => {
+          setScale(1);
+          setTranslate({ x: 0, y: 0 });
+        }}>
           <Text style={styles.zoomText}>⌂</Text>
         </View>
       </View>

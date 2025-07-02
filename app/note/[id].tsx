@@ -2,11 +2,11 @@ import { View, StyleSheet, Alert, TouchableOpacity, TextInput, KeyboardAvoidingV
 import { useState, useEffect, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Palette, RotateCcw, Save } from 'lucide-react-native';
+import { ArrowLeft, RotateCcw, Save } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useNotes, Note } from '@/contexts/NotesContext';
-import { InfiniteCanvas } from '@/components/InfiniteCanvas';
-import { DrawingTools } from '@/components/DrawingTools';
+import { InfiniteCanvas, CanvasRef } from '@/components/InfiniteCanvas/InfiniteCanvas';
+import { Toolbar, Tool } from '@/components/Toolbar';
 
 export interface DrawPath {
   id: string;
@@ -22,17 +22,12 @@ export default function NoteScreen() {
   const [note, setNote] = useState<Note | null>(null);
   const [title, setTitle] = useState('');
   const [paths, setPaths] = useState<DrawPath[]>([]);
-  const [currentTool, setCurrentTool] = useState<{
-    color: string;
-    strokeWidth: number;
-    mode: 'draw' | 'erase';
-  }>({
-    color: theme.onSurface,
-    strokeWidth: 2,
-    mode: 'draw',
-  });
-  const [showTools, setShowTools] = useState(false);
+  const [currentTool, setCurrentTool] = useState<Tool>('draw');
+  const [color, setColor] = useState(theme.onSurface);
+  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [eraserSize, setEraserSize] = useState(30);
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
+  const canvasRef = useRef<CanvasRef>(null);
 
   useEffect(() => {
     if (id) {
@@ -110,6 +105,14 @@ export default function NoteScreen() {
     }
   };
 
+  const onZoomIn = () => {
+    canvasRef.current?.zoomIn();
+  };
+
+  const onZoomOut = () => {
+    canvasRef.current?.zoomOut();
+  };
+
   if (!note) {
     return null;
   }
@@ -161,31 +164,6 @@ export default function NoteScreen() {
     canvasContainer: {
       flex: 1,
     },
-    toolsContainer: {
-      position: 'absolute',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      backgroundColor: theme.surface,
-      borderTopWidth: 1,
-      borderTopColor: theme.outlineVariant,
-    },
-    toolsToggle: {
-      position: 'absolute',
-      bottom: 20,
-      right: 20,
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      backgroundColor: theme.primary,
-      justifyContent: 'center',
-      alignItems: 'center',
-      elevation: 6,
-      shadowColor: theme.shadow,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-    },
   });
 
   return (
@@ -221,28 +199,29 @@ export default function NoteScreen() {
 
         <View style={styles.canvasContainer}>
           <InfiniteCanvas
+            canvasRef={canvasRef}
             template={note.template}
             paths={paths}
             onPathsChange={handlePathsChange}
             currentTool={currentTool}
+            color={color}
+            strokeWidth={strokeWidth}
+            eraserSize={eraserSize}
           />
         </View>
 
-        {showTools && (
-          <View style={styles.toolsContainer}>
-            <DrawingTools
-              currentTool={currentTool}
-              onToolChange={setCurrentTool}
-            />
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={styles.toolsToggle}
-          onPress={() => setShowTools(!showTools)}
-        >
-          <Palette size={24} color={theme.onPrimary} />
-        </TouchableOpacity>
+        <Toolbar
+          currentTool={currentTool}
+          onToolChange={setCurrentTool}
+          onZoomIn={onZoomIn}
+          onZoomOut={onZoomOut}
+          color={color}
+          onColorChange={setColor}
+          strokeWidth={strokeWidth}
+          onStrokeWidthChange={setStrokeWidth}
+          eraserSize={eraserSize}
+          onEraserSizeChange={setEraserSize}
+        />
       </SafeAreaView>
     </KeyboardAvoidingView>
   );
